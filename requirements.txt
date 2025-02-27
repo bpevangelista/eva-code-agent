@@ -1,0 +1,2 @@
+accelerate>=1.4.0
+vllm>=0.7.3
