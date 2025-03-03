@@ -47,7 +47,7 @@ class EmbeddingModel:
         self.tokenizer = _try_load_tokenizer(self.MODEL_ID, self.MODEL_CONTEXT_LENGTH)
         self.device = next(self.model.parameters()).device
 
-    def generate(self, text: str):
+    def generate(self, text: list[str]):
         logger.info(f"Generate: {text}")
 
         # [B, D_MODEL]

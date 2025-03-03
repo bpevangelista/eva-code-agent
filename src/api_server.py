@@ -9,7 +9,7 @@ embedding_model = EmbeddingModel()
 
 
 class EmbeddingRequest(BaseModel):
-    prompt: str
+    prompt: list[str]
 
 
 @app.post("/v1/embeddings")
