@@ -48,7 +48,7 @@ class EmbeddingModel:
         self.device = next(self.model.parameters()).device
 
     def generate(self, text: list[str]):
-        logger.info(f"Generate: {text}")
+        logger.debug(f"Generate: {text}")
 
         # [B, D_MODEL]
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(self.device)
