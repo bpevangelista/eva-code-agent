@@ -1,6 +1,5 @@
 # eva-code-agent
 
-https://huggingface.co/Salesforce/SFR-Embedding-Code-2B_R/
 
 ## Installation
 ``` bash

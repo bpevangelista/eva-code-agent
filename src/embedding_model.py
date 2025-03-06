@@ -50,6 +50,8 @@ class EmbeddingModel:
     def generate(self, text: list[str]):
         logger.debug(f"Generate: {text}")
 
+        # TODO Break into 1024 chunks, and generate unified mean-pool
+
         # [B, D_MODEL]
         inputs = self.tokenizer(text, return_tensors="pt", truncation=True, padding=True).to(self.device)
         with torch.no_grad():

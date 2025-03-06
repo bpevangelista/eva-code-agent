@@ -1,3 +1,5 @@
 accelerate>=1.4.0
+lz4
+msgspec
 gitpython>=3.1
 vllm>=0.7.3
