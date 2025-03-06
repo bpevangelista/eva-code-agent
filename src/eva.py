@@ -48,9 +48,7 @@ def get_repo_files(repo_branch: Head, exclude_extensions: list[str] | None = Non
             logger.warning(f"Failed to read: {blob.path}. Skipping...")
             continue
 
-        files_map[blob.hexsha] = RepoFile(
-            path=blob.path, raw=file_raw, summary="", embeddings=RepoBlobEmbeddings(unified=None)
-        )
+        files_map[blob.hexsha] = RepoFile(path=blob.path, raw=file_raw, summary=None, embeddings=None)
         commits_files_set.add(blob.hexsha)
 
     return files_map, commits_files_set
@@ -85,12 +83,15 @@ def save_repo_index(repo_index: RepoIndex):
 
 
 def generate_embeddings(repo_index: RepoIndex):
-    logger.info(f"Generating embeddings for index: {repo_index.uuid}")
+    logger.info(f"Generating embeddings: {repo_index.uuid}")
 
     count = 0
     for key, file in repo_index.files_map.items():
         if file.embeddings is None:
-            file.embeddings = embedding_model.generate([file.raw])
+            logger.info(f"  Embeddings: {file.path}")
+            result_embedding = embedding_model.generate([file.raw])
+            file.embeddings = RepoBlobEmbeddings(unified=result_embedding)
+            repo_index.files_map[key] = file
 
         count += 1
         if count > 10000:
@@ -107,9 +108,10 @@ repo_index: RepoIndex = load_or_create_repo_index(repo_uuid)
 files_map, commits_files_set = get_repo_files(repo.active_branch)
 
 # Merge repo_index, files_map, commits_files_set
-repo_index.files_map.update(files_map)
-repo_index.commits_files_map[repo.active_branch.commit.hexsha] = commits_files_set
-save_repo_index(repo_index)
+if repo.active_branch.commit.hexsha not in repo_index.commits_files_map:
+    repo_index.commits_files_map[repo.active_branch.commit.hexsha] = commits_files_set
+    repo_index.files_map.update({k: v for k, v in files_map.items() if k not in repo_index.files_map})
+    save_repo_index(repo_index)
 
 global_index_map[repo_index.uuid] = repo_index
 generate_embeddings(repo_index)
