@@ -1,6 +1,9 @@
 import gc
+from typing import Any
+
 import torch
 from transformers import AutoModel, AutoTokenizer
+from platform_utils import is_package_available
 
 from logging_config import get_logger
 
@@ -14,14 +17,49 @@ def clear_cuda_caches():
     gc.collect()
 
 
-def _try_load_model(model_name_or_path: str):
+def _log_torch_devices_info():
+    logger.info(
+        f"Torch ({torch.__version__}), CPUs: {torch.get_num_threads()}, "
+        + f"CUDA_GPUs: {torch.cuda.device_count()}, "
+        + f"MPS_GPU: {torch.backends.mps.is_available()}"
+    )
+
+    backends = {
+        "CPU": torch.backends.cpu.get_cpu_capability(),
+        "CU_DNN": torch.backends.cudnn.is_available(),
+        "MKL_DNN": torch.backends.mkldnn.is_available(),
+        "MKL": torch.backends.mkl.is_available(),
+        "OpenMP": torch.backends.openmp.is_available(),
+    }
+    logger.info(f"  {', '.join(f'{key} {value}' for key, value in backends.items())}")
+
+    for i in range(torch.cuda.device_count()):
+        cuda_device = torch.cuda.device(i)
+        device_info = torch.cuda.get_device_properties(cuda_device)
+        device_memory_in_gb = device_info.total_memory / (1024 * 1024 * 1024)
+        flash_attn_2 = is_package_available("flash_attn", "2.4.2")
+        logger.info(f"  {i:02d}: {device_info.name} {round(device_memory_in_gb, 2)}GB")
+        logger.info(f"      {{bf16: {torch.cuda.is_bf16_supported()}, flash_attn_2: {flash_attn_2}}}")
+
+
+def _get_best_device():
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    elif torch.cuda.is_available():
+        return torch.device("cuda", 0)
+    else:
+        return torch.device("cpu")
+
+
+def _try_load_model(model_name_or_path: str, model_device: Any = None):
     logger.info(f"Loading model: {model_name_or_path}")
     model = AutoModel.from_pretrained(
         model_name_or_path,
         trust_remote_code=True,
         use_safetensors=True,
-        device_map="cuda" if torch.cuda.is_available() else "cpu",
     )
+    if model_device:
+        model.to(model_device)
     model.eval()
     return model
 
@@ -42,10 +80,13 @@ class EmbeddingModel:
 
     def __init__(self):
         clear_cuda_caches()
+        _log_torch_devices_info()
 
-        self.model = _try_load_model(self.MODEL_ID)
+        self.device = _get_best_device()
+        torch.set_default_device(self.device)
+
+        self.model = _try_load_model(self.MODEL_ID, self.device)
         self.tokenizer = _try_load_tokenizer(self.MODEL_ID, self.MODEL_CONTEXT_LENGTH)
-        self.device = next(self.model.parameters()).device
 
     def generate(self, text: list[str]):
         logger.debug(f"Generate: {text}")

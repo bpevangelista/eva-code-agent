@@ -13,7 +13,7 @@ from logging_config import get_logger
 logger = get_logger(__name__)
 
 APP_ID = "evacode"
-embedding_model = None
+embedding_model = EmbeddingModel()
 
 # In-memory index maps
 global_index_map: dict[str, RepoIndex] = {}
@@ -83,13 +83,11 @@ def save_repo_index(repo_index: RepoIndex):
 
 
 def generate_embeddings(repo_index: RepoIndex):
-    global embedding_model
     logger.info(f"Generating embeddings: {repo_index.uuid}")
 
     count = 0
     for key, file in repo_index.files_map.items():
         if file.embeddings is None:
-            embedding_model = embedding_model or EmbeddingModel()
             logger.info(f"  Embeddings: {file.path}")
             result_embedding = embedding_model.generate([file.raw])
             file.embeddings = RepoBlobEmbeddings(unified=result_embedding)
