@@ -1,5 +1,7 @@
+click
 lz4
 msgspec
 gitpython>=3.1
 transformers
 vllm>=0.7.3
+zmq

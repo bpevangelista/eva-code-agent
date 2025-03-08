@@ -1,17 +1,23 @@
 repos:
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
   - repo: https://github.com/psf/black
-    rev: 23.1.0  # Use latest stable version
+    rev: 23.1.0
     hooks:
       - id: black
 
   - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.1.9  # Use latest stable version
+    rev: v0.1.9
     hooks:
       - id: ruff
-        args: [--fix]  # Auto-fix linting issues
+        args: [--fix]
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.3.0  # Use latest stable version
+    rev: v4.3.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
