@@ -21,7 +21,7 @@ def get_repo_uuid(repo: Repo) -> str:
 
 
 def get_repo_files(repo_branch: Head, exclude_extensions: list[str] | None = None) -> (dict[str, RepoFile], set[str]):
-    logger.info(f"Traversing repo files: {repo_branch.name}")
+    logger.info(f"Traversing git repo branch: {repo_branch.name}")
     repo_commit = repo_branch.commit
     files_map: dict[str, RepoFile] = {}
     commits_files_set: set[str] = set()

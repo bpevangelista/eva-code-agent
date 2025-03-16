@@ -62,7 +62,7 @@ class EvaCode:
             print(f"Failed saving: {repo_index_path}\n{e}")
 
     def _generate_repo_embeddings(self, repo_index: RepoIndex):
-        logger.info(f"Generating embeddings: {repo_index.uuid}")
+        logger.info(f"Embedding repo: {repo_index.uuid}")
 
         embedding_count = 0
         files_count = 0
@@ -75,15 +75,17 @@ class EvaCode:
                     repo_index.files_map[key] = file
                     embedding_count += 1
                 except Exception as e:
-                    logger.error(f"Failed embedding: {e}")
+                    logger.error(f"Failed embedding: {file.path} {e}")
 
+            files_count += 1
             if embedding_count >= EvaCode.REPO_CHECKPOINT_TRIGGER_COUNT:
                 EvaCode._save_repo_index(repo_index)
                 embedding_count = 0
-
-            files_count += 1
             if files_count >= EvaCode.REPO_MAX_INDEXED_FILES:
                 break
+
+        if embedding_count > 0:
+            EvaCode._save_repo_index(repo_index)
 
     def add_repo_to_index(self, repo_path: str) -> bool:
         logger.info(f"Adding to index: {repo_path}")
@@ -96,13 +98,14 @@ class EvaCode:
 
             # Merge repo_index, files_map, commits_files_set
             if repo.active_branch.commit.hexsha not in repo_index.commits_files_map:
+                logger.info(f"Updating index : {repo_path}")
                 repo_index.commits_files_map[repo.active_branch.commit.hexsha] = commits_files_set
                 repo_index.files_map.update({k: v for k, v in files_map.items() if k not in repo_index.files_map})
                 EvaCode._save_repo_index(repo_index)
 
             self._repo_index_map[repo_index.uuid] = repo_index
             self._generate_repo_embeddings(repo_index)
-            EvaCode._save_repo_index(repo_index)
+
         except Exception as e:
             logger.error(f"Failed to index: {repo_path} {e}")
             return False
@@ -143,8 +146,8 @@ class EvaCodeDaemon:
             request.payload.get("query")
             self.send_reply(CodeReply(CodeStatus.OK))
             # TODO Implement
-
-        return CodeReply.from_error("Error: Unknown request type", logger)
+        else:
+            return CodeReply.from_error("Error: Unknown CLI request", logger)
 
     def send_reply(self, reply: CodeReply):
         try:
@@ -160,7 +163,7 @@ class EvaCodeDaemon:
             return None
 
     def main_loop(self):
-        logger.info("Starting daemon loop...")
+        logger.info("Begin daemon loop...")
         try:
             self.socket.bind(EvaCodeDaemon.DAEMON_IPC)
         except OSError as e:
@@ -218,7 +221,8 @@ def stop():
 @cli.command()
 @click.argument("repo-path")
 def add_repo(repo_path: str):
-    send_request(CodeRequestType.ADD_REPO, {"repo_path": repo_path})
+    absolute_path = os.path.abspath(repo_path)
+    send_request(CodeRequestType.ADD_REPO, {"repo_path": absolute_path})
 
 
 @cli.command()
