@@ -24,7 +24,6 @@ APP_ID = "evacode"
 logger = get_logger(APP_ID)
 
 
-
 class EvaCode:
     REPO_MAX_INDEXED_FILES = 1024 * 1024
     REPO_CHECKPOINT_TRIGGER_COUNT = 100
@@ -68,7 +67,7 @@ class EvaCode:
         logger.info(f"Embedding repo: {repo_index.path}")
 
         if not any(repo_file.embeddings is None for repo_file in repo_index.files_map.values()):
-            logger.info(f"  Skip, already done")
+            logger.info("  Skip, already done")
 
         embedding_count = 0
         files_count = 0
@@ -97,6 +96,11 @@ class EvaCode:
         logger.info(f"Adding to index: {repo_path}")
         try:
             repo = get_repo(repo_path)
+        except Exception:
+            logger.error(f"  Not found: {repo_path}")
+            return False
+
+        try:
             repo_index: RepoIndex = EvaCode._load_or_create_repo_index(repo)
             files_map, commits_files_set = get_repo_files(repo)
 
@@ -109,9 +113,21 @@ class EvaCode:
 
             self._repo_index_map[repo_index.uuid] = repo_index
             self._generate_repo_embeddings(repo_index)
-
+            return True
         except Exception as e:
             logger.error(f"Failed to index: {repo_path} {e}")
+            return False
+
+    def remove_repo_from_index(self, repo_path: str) -> bool:
+        logger.info(f"Removing from index: {repo_path}")
+        try:
+            repo = get_repo(repo_path)
+            repo_uuid = get_repo_uuid(repo)
+            del self._repo_index_map[repo_uuid]
+            self._repo_index_map[repo_uuid] = None
+            return True
+        except Exception:
+            logger.error(f"  Not found: {repo_path}")
             return False
 
 
@@ -142,9 +158,9 @@ class EvaCodeDaemon:
             self.send_reply(CodeReply(CodeStatus.OK))
             self.eva_code.add_repo_to_index(repo_path)
         elif request.request == CodeRequestType.REMOVE_REPO:
-            request.payload.get("repo_path")
+            repo_path = request.payload.get("repo_path")
             self.send_reply(CodeReply(CodeStatus.OK))
-            # TODO Implement
+            self.eva_code.remove_repo_from_index(repo_path)
         elif request.request == CodeRequestType.QUERY_REPOS:
             request.payload.get("repo_path")
             request.payload.get("query")
@@ -232,7 +248,8 @@ def add_repo(repo_path: str):
 @cli.command()
 @click.argument("repo-path")
 def remove_repo(repo_path: str):
-    send_request(CodeRequestType.REMOVE_REPO, {"repo_path": repo_path})
+    absolute_path = os.path.abspath(repo_path)
+    send_request(CodeRequestType.REMOVE_REPO, {"repo_path": absolute_path})
 
 
 if __name__ == "__main__":
