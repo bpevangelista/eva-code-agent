@@ -21,6 +21,7 @@ class RepoFile(msgspec.Struct):
 
 class RepoIndex(msgspec.Struct):
     uuid: str
+    path: str
     # Map [file-sha1, RepoFile]
     files_map: dict[str, RepoFile]
     # Map [commit-sha1, set[file-sha1]]

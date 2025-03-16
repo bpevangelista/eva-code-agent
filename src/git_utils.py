@@ -20,12 +20,13 @@ def get_repo_uuid(repo: Repo) -> str:
     return f"{repo_path}_{hashlib.sha256(remote_url.encode()).hexdigest()[:16]}"
 
 
-def get_repo_files(repo_branch: Head, exclude_extensions: list[str] | None = None) -> (dict[str, RepoFile], set[str]):
-    logger.info(f"Traversing git repo branch: {repo_branch.name}")
-    repo_commit = repo_branch.commit
+def get_repo_files(repo: Repo, exclude_extensions: list[str] | None = None) -> (dict[str, RepoFile], set[str]):
+    repo_branch = repo.active_branch
+    logger.info(f"Traversing branch: \"{repo.active_branch}\" on {repo.git_dir}")
     files_map: dict[str, RepoFile] = {}
     commits_files_set: set[str] = set()
 
+    repo_commit = repo_branch.commit
     for blob in repo_commit.tree.traverse():
         if not isinstance(blob, Blob) or not blob.mime_type.startswith("text/"):
             continue

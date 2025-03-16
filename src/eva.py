@@ -5,6 +5,7 @@ import click
 import lz4.frame
 import msgspec
 import zmq
+from git import Repo
 
 from embedding_model import EmbeddingModel
 from git_utils import get_repo, get_repo_files, get_repo_uuid
@@ -19,9 +20,9 @@ from schemas import (
     RepoIndex,
 )
 
-logger = get_logger(__name__)
-
 APP_ID = "evacode"
+logger = get_logger(APP_ID)
+
 
 
 class EvaCode:
@@ -34,7 +35,8 @@ class EvaCode:
         self.embedding_model = EmbeddingModel()
 
     @staticmethod
-    def _load_or_create_repo_index(repo_uuid: str) -> RepoIndex:
+    def _load_or_create_repo_index(repo: Repo) -> RepoIndex:
+        repo_uuid = get_repo_uuid(repo)
         app_data_path = get_data_path(APP_ID)
         repo_index_path = os.path.join(app_data_path, f"{repo_uuid}.lz4")
         logger.info(f"Loading index: {repo_index_path}")
@@ -46,7 +48,8 @@ class EvaCode:
             except (OSError, msgspec.DecodeError) as e:
                 logger.error(f"Failed reading: {repo_index_path}\n{e}")
 
-        return RepoIndex(uuid=repo_uuid, files_map={}, commits_files_map={})
+        repo_path = os.path.dirname(repo.git_dir)
+        return RepoIndex(uuid=repo_uuid, path=repo_path, files_map={}, commits_files_map={})
 
     @staticmethod
     def _save_repo_index(repo_index: RepoIndex):
@@ -62,7 +65,10 @@ class EvaCode:
             print(f"Failed saving: {repo_index_path}\n{e}")
 
     def _generate_repo_embeddings(self, repo_index: RepoIndex):
-        logger.info(f"Embedding repo: {repo_index.uuid}")
+        logger.info(f"Embedding repo: {repo_index.path}")
+
+        if not any(repo_file.embeddings is None for repo_file in repo_index.files_map.values()):
+            logger.info(f"  Skip, already done")
 
         embedding_count = 0
         files_count = 0
@@ -91,14 +97,12 @@ class EvaCode:
         logger.info(f"Adding to index: {repo_path}")
         try:
             repo = get_repo(repo_path)
-            repo_uuid = get_repo_uuid(repo)
-
-            repo_index: RepoIndex = EvaCode._load_or_create_repo_index(repo_uuid)
-            files_map, commits_files_set = get_repo_files(repo.active_branch)
+            repo_index: RepoIndex = EvaCode._load_or_create_repo_index(repo)
+            files_map, commits_files_set = get_repo_files(repo)
 
             # Merge repo_index, files_map, commits_files_set
             if repo.active_branch.commit.hexsha not in repo_index.commits_files_map:
-                logger.info(f"Updating index : {repo_path}")
+                logger.info(f"  Updating index: {repo_path}")
                 repo_index.commits_files_map[repo.active_branch.commit.hexsha] = commits_files_set
                 repo_index.files_map.update({k: v for k, v in files_map.items() if k not in repo_index.files_map})
                 EvaCode._save_repo_index(repo_index)
