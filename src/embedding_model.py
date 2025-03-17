@@ -54,10 +54,19 @@ def _get_best_device():
 
 def _try_load_model(model_name_or_path: str, model_device: Any = None):
     logger.info(f"Loading model: {model_name_or_path}")
+
+    # TODO embedding.cpu() fails for bf16
+    # use_bf16 = torch.cuda.is_bf16_supported()
+    use_bf16 = False
+    torch.set_default_dtype(torch.bfloat16 if use_bf16 else torch.float16)
+
     model = AutoModel.from_pretrained(
         model_name_or_path,
         trust_remote_code=True,
         use_safetensors=True,
+        torch_dtype=torch.bfloat16 if use_bf16 else torch.float16,
+        # TODO Implement sdpa support
+        # attn_implementation='flash_attention_2' if is_flash_attn_2_available() else 'sdpa',
     )
     if model_device:
         model.to(model_device)
@@ -69,6 +78,7 @@ def _try_load_tokenizer(model_name_or_path: str, max_length: int):
     logger.info(f"Loading tokenizer: {model_name_or_path}")
     return AutoTokenizer.from_pretrained(
         model_name_or_path,
+        use_fast=True,
         trust_remote_code=True,
         model_max_length=max_length,
         return_tensors="pt",
@@ -76,7 +86,9 @@ def _try_load_tokenizer(model_name_or_path: str, max_length: int):
 
 
 class EmbeddingModel:
-    MODEL_ID = "codesage/codesage-large-v2"
+    BASE_MODEL_ID = "codesage/codesage-base-v2"
+    LARGE_MODEL_ID = "codesage/codesage-large-v2"
+    MODEL_ID = BASE_MODEL_ID
     MODEL_CONTEXT_LENGTH = 1024
 
     def __init__(self):
