@@ -1,9 +1,11 @@
+import copy
 import os
 import tempfile
 
 import click
 import lz4.frame
 import msgspec
+import numpy as np
 import zmq
 from git import Repo
 
@@ -34,6 +36,17 @@ class EvaCode:
         self.embedding_model = EmbeddingModel()
 
     @staticmethod
+    def _flip_flop_embeddings(repo_index: RepoIndex):
+        for file_sha in repo_index.files_map.keys():
+            repo_file = repo_index.files_map[file_sha]
+            if repo_file.embeddings is None:
+                continue
+            if isinstance(repo_file.embeddings.unified, np.ndarray):
+                repo_file.embeddings.unified = repo_file.embeddings.unified.tolist()
+            else:
+                repo_file.embeddings.unified = np.array(repo_file.embeddings.unified)
+
+    @staticmethod
     def _load_or_create_repo_index(repo: Repo) -> RepoIndex:
         repo_uuid = get_repo_uuid(repo)
         app_data_path = get_data_path(APP_ID)
@@ -43,7 +56,9 @@ class EvaCode:
         if os.path.exists(repo_index_path):
             try:
                 with lz4.frame.open(repo_index_path, "rb") as f:
-                    return msgspec.msgpack.decode(f.read(), type=RepoIndex)
+                    repo_index = msgspec.msgpack.decode(f.read(), type=RepoIndex)
+                    EvaCode._flip_flop_embeddings(repo_index)
+                    return repo_index
             except (OSError, msgspec.DecodeError) as e:
                 logger.error(f"Failed reading: {repo_index_path}\n{e}")
 
@@ -57,7 +72,9 @@ class EvaCode:
         logger.info(f"Saving index: {repo_index_path}")
 
         try:
-            encoded_data = msgspec.msgpack.encode(repo_index)
+            repo_index_copy = copy.deepcopy(repo_index)
+            EvaCode._flip_flop_embeddings(repo_index_copy)
+            encoded_data = msgspec.msgpack.encode(repo_index_copy)
             with lz4.frame.open(repo_index_path, "wb") as f:
                 f.write(encoded_data)
         except OSError as e:
@@ -75,7 +92,9 @@ class EvaCode:
             if file.embeddings is None:
                 try:
                     logger.info(f"  Embeddings: {file.path}")
-                    result_embedding = self.embedding_model.generate([file.raw])
+                    result_embeddings = self.embedding_model.generate([file.raw])
+                    # TODO Implement batching
+                    result_embedding = result_embeddings[0]
                     file.embeddings = RepoBlobEmbeddings(unified=result_embedding)
                     repo_index.files_map[key] = file
                     embedding_count += 1
@@ -130,6 +149,34 @@ class EvaCode:
             logger.error(f"  Not found: {repo_path}")
             return False
 
+    @staticmethod
+    def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
+        return np.dot(emb1, emb2)
+
+    def query_repos(self, query: str, top_k: int = 20) -> list[(float, str)]:
+        logger.info(f'Querying repos: "{query}"')
+
+        query_embeddings = self.embedding_model.generate([query, query])
+        query_embedding = query_embeddings[0]
+
+        scored_files: list[(float, str)] = []
+        for repo_index in self._repo_index_map.values():
+            repo = get_repo(repo_index.path)
+            current_sha = repo.active_branch.commit.hexsha
+            for file_sha in repo_index.commits_files_map[current_sha]:
+                repo_file = repo_index.files_map[file_sha]
+                score = EvaCode.cosine_similarity(repo_file.embeddings.unified, query_embedding)
+                if score > 0:
+                    scored_files.append((score, repo_file))
+        scored_files = sorted(scored_files, reverse=True)[:top_k]
+
+        # Debug
+        logger.info("Query Results")
+        for score, file in scored_files:
+            logger.info(f"  {score:.3f} {file.path}")
+
+        return scored_files
+
 
 class EvaCodeDaemon:
     DAEMON_IPC = f"ipc:///{tempfile.gettempdir()}/{APP_ID}"
@@ -162,10 +209,9 @@ class EvaCodeDaemon:
             self.send_reply(CodeReply(CodeStatus.OK))
             self.eva_code.remove_repo_from_index(repo_path)
         elif request.request == CodeRequestType.QUERY_REPOS:
-            request.payload.get("repo_path")
-            request.payload.get("query")
+            query = request.payload.get("query")
             self.send_reply(CodeReply(CodeStatus.OK))
-            # TODO Implement
+            self.eva_code.query_repos(query)
         else:
             return CodeReply.from_error("Error: Unknown CLI request", logger)
 
@@ -236,6 +282,12 @@ def start():
 @cli.command()
 def stop():
     send_request(CodeRequestType.STOP)
+
+
+@cli.command()
+@click.argument("repo_query")
+def query(repo_query: str):
+    send_request(CodeRequestType.QUERY_REPOS, {"query": repo_query})
 
 
 @cli.command()

@@ -1,11 +1,12 @@
 import gc
 from typing import Any
 
+import numpy as np
 import torch
 from transformers import AutoModel, AutoTokenizer
-from platform_utils import is_package_available
 
 from logging_config import get_logger
+from platform_utils import is_package_available
 
 logger = get_logger(__name__)
 
@@ -88,7 +89,7 @@ class EmbeddingModel:
         self.model = _try_load_model(self.MODEL_ID, self.device)
         self.tokenizer = _try_load_tokenizer(self.MODEL_ID, self.MODEL_CONTEXT_LENGTH)
 
-    def generate(self, text: list[str]):
+    def generate(self, text: list[str]) -> np.ndarray:
         logger.debug(f"Generate: {text}")
 
         # TODO Break into 1024 chunks, and generate unified mean-pool
@@ -112,4 +113,5 @@ class EmbeddingModel:
         # Normalize vector
         embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
         embedding = embedding.cpu().numpy()
-        return embedding.tolist()
+        # [B, NDARRAY]
+        return embedding
