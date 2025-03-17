@@ -28,7 +28,7 @@ logger = get_logger(APP_ID)
 
 class EvaCode:
     REPO_MAX_INDEXED_FILES = 1024 * 1024
-    REPO_CHECKPOINT_TRIGGER_COUNT = 100
+    REPO_CHECKPOINT_TRIGGER_COUNT = 200
 
     def __init__(self):
         # In-memory index maps
@@ -58,6 +58,7 @@ class EvaCode:
                 with lz4.frame.open(repo_index_path, "rb") as f:
                     repo_index = msgspec.msgpack.decode(f.read(), type=RepoIndex)
                     EvaCode._flip_flop_embeddings(repo_index)
+                    logger.info(f"  {len(repo_index.files_map)} files loaded")
                     return repo_index
             except (OSError, msgspec.DecodeError) as e:
                 logger.error(f"Failed reading: {repo_index_path}\n{e}")
@@ -85,6 +86,7 @@ class EvaCode:
 
         if not any(repo_file.embeddings is None for repo_file in repo_index.files_map.values()):
             logger.info("  Skip, already done")
+            return
 
         embedding_count = 0
         files_count = 0
@@ -99,7 +101,7 @@ class EvaCode:
                     repo_index.files_map[key] = file
                     embedding_count += 1
                 except Exception as e:
-                    logger.error(f"Failed embedding: {file.path} {e}")
+                    logger.error(f"  Failed embedding: {e}")
 
             files_count += 1
             if embedding_count >= EvaCode.REPO_CHECKPOINT_TRIGGER_COUNT:
@@ -168,10 +170,12 @@ class EvaCode:
                 score = EvaCode.cosine_similarity(repo_file.embeddings.unified, query_embedding)
                 if score > 0:
                     scored_file = (score, copy.deepcopy(repo_file))
+                    scored_file[1].path = os.path.join(repo_index.path, scored_file[1].path)
                     scored_files.append(scored_file)
-        scored_files = sorted(scored_files, reverse=True)[:top_k]
 
-        # Debug
+        scored_files = sorted(scored_files, reverse=True)[:top_k]
+        logger.info("  done")
+
         logger.debug("Query Results")
         for score, file in scored_files:
             file.embeddings = None
@@ -246,7 +250,7 @@ class EvaCodeDaemon:
                 if request:
                     self.handle_request(request)
             except Exception as e:
-                logger.error(f"{e}")
+                logger.exception(f"{e}")
 
         self.release()
 
