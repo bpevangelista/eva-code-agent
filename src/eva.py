@@ -151,7 +151,7 @@ class EvaCode:
 
     @staticmethod
     def cosine_similarity(emb1: np.ndarray, emb2: np.ndarray) -> float:
-        return np.dot(emb1, emb2)
+        return float(np.dot(emb1, emb2))
 
     def query_repos(self, query: str, top_k: int = 20) -> list[(float, str)]:
         logger.info(f'Querying repos: "{query}"')
@@ -167,13 +167,15 @@ class EvaCode:
                 repo_file = repo_index.files_map[file_sha]
                 score = EvaCode.cosine_similarity(repo_file.embeddings.unified, query_embedding)
                 if score > 0:
-                    scored_files.append((score, repo_file))
+                    scored_file = (score, copy.deepcopy(repo_file))
+                    scored_files.append(scored_file)
         scored_files = sorted(scored_files, reverse=True)[:top_k]
 
         # Debug
-        logger.info("Query Results")
+        logger.debug("Query Results")
         for score, file in scored_files:
-            logger.info(f"  {score:.3f} {file.path}")
+            file.embeddings = None
+            logger.debug(f"  {score:.3f} {file.path}")
 
         return scored_files
 
@@ -210,8 +212,9 @@ class EvaCodeDaemon:
             self.eva_code.remove_repo_from_index(repo_path)
         elif request.request == CodeRequestType.QUERY_REPOS:
             query = request.payload.get("query")
-            self.send_reply(CodeReply(CodeStatus.OK))
-            self.eva_code.query_repos(query)
+            result = self.eva_code.query_repos(query)
+            result_payload = {"result": result}
+            self.send_reply(CodeReply(CodeStatus.OK, payload=result_payload))
         else:
             return CodeReply.from_error("Error: Unknown CLI request", logger)
 
@@ -287,7 +290,10 @@ def stop():
 @cli.command()
 @click.argument("repo_query")
 def query(repo_query: str):
-    send_request(CodeRequestType.QUERY_REPOS, {"query": repo_query})
+    reply = send_request(CodeRequestType.QUERY_REPOS, {"query": repo_query})
+    scored_files = reply.payload.get("result")
+    for score, file in scored_files:
+        print(f'{score:.3f} {file.get("path")}')
 
 
 @cli.command()
