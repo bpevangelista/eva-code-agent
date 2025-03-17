@@ -1,6 +1,6 @@
 import hashlib
 
-from git import Blob, Head, Repo
+from git import Blob, Repo
 
 from logging_config import get_logger
 from schemas import RepoFile
@@ -22,7 +22,7 @@ def get_repo_uuid(repo: Repo) -> str:
 
 def get_repo_files(repo: Repo, exclude_extensions: list[str] | None = None) -> (dict[str, RepoFile], set[str]):
     repo_branch = repo.active_branch
-    logger.info(f"Traversing branch: \"{repo.active_branch}\" on {repo.git_dir}")
+    logger.info(f'Traversing branch: "{repo.active_branch}" on {repo.git_dir}')
     files_map: dict[str, RepoFile] = {}
     commits_files_set: set[str] = set()
 
@@ -45,4 +45,5 @@ def get_repo_files(repo: Repo, exclude_extensions: list[str] | None = None) -> (
         files_map[blob.hexsha] = RepoFile(path=blob.path, raw=file_raw, summary=None, embeddings=None)
         commits_files_set.add(blob.hexsha)
 
+    logger.info(f"  {len(files_map)} files traversed")
     return files_map, commits_files_set
